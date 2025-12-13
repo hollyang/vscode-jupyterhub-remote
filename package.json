@@ -18,7 +18,9 @@
         "vscode": "^1.85.0"
     },
     "categories": [
-        "Other"
+        "Data Science",
+        "Machine Learning",
+        "Notebooks"
     ],
     "activationEvents": [
         "onView:jupyterhubServers",
