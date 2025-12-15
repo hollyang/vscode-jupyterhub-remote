@@ -100,7 +100,10 @@ export class MetricsManager {
             return cores.toFixed(1).replace(/\.0$/, '');
         };
 
-        const cpuTotal = data.cpu_count;
+        const cpuLimit = data.limits?.cpu?.cpu;
+        const cpuTotal = (Number.isFinite(cpuLimit) && (cpuLimit as number) > 0)
+            ? (cpuLimit as number)
+            : data.cpu_count;
         const cpuUsedCores = (data.cpu_percent / 100) * cpuTotal;
         const cpuText = Number.isFinite(cpuTotal) && cpuTotal > 0
             ? `${formatCores(cpuUsedCores)}/${cpuTotal}`
@@ -127,7 +130,12 @@ export class MetricsManager {
         tooltip.appendMarkdown(`### 服务器资源监控\n\n`);
         tooltip.appendMarkdown(`- **CPU 使用率**: ${data.cpu_percent}%\n`);
         tooltip.appendMarkdown(`- **CPU 使用核数(估算)**: ${formatCores(cpuUsedCores)} / ${cpuTotal}\n`);
-        if (data.limits?.cpu?.cpu) tooltip.appendMarkdown(`- **CPU 限制**: ${data.limits.cpu.cpu}核\n`);
+        if (Number.isFinite(cpuLimit) && (cpuLimit as number) > 0) {
+            tooltip.appendMarkdown(`- **CPU 限制**: ${cpuLimit}核\n`);
+        }
+        if (Number.isFinite(data.cpu_count) && data.cpu_count > 0 && data.cpu_count !== cpuTotal) {
+            tooltip.appendMarkdown(`- **宿主机 CPU 核数**: ${data.cpu_count}核\n`);
+        }
         tooltip.appendMarkdown(`---\n`);
         tooltip.appendMarkdown(`- **内存使用 (RSS)**: ${formatBytes(data.rss)}\n`);
         tooltip.appendMarkdown(`- **内存使用 (PSS)**: ${formatBytes(data.pss)}\n`);
