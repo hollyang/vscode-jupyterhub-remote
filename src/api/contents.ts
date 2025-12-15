@@ -155,6 +155,19 @@ export class ContentsApi {
     }
 
     /**
+     * 复制文件或目录到目标目录
+     * @param destinationDir 目标目录路径（如: "test" 或 "" 表示用户根目录）
+     * @param copyFrom 源路径（相对用户根目录，如: "a.json" 或 "test/test_dir"）
+     */
+    async copy(destinationDir: string, copyFrom: string): Promise<ContentModel> {
+        const url = `/api/contents/${encodeURIComponent(destinationDir)}`;
+        const data = { copy_from: copyFrom };
+
+        const response = await this.client.post<ContentModel>(url, data);
+        return response.data;
+    }
+
+    /**
      * 上传文件
      */
     async uploadFile(path: string, content: string, format: ContentFormat = 'base64'): Promise<ContentModel> {

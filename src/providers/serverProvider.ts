@@ -61,11 +61,12 @@ export class ServerProvider implements vscode.TreeDataProvider<ServerTreeItem> {
         const savedUrl = ConfigManager.getServerUrl();
         const recentServers = ConfigManager.getRecentServers();
 
-        // Level 2: Children of groups (Recent Servers / Other Servers)
+        // Level 2: Children of groups (Recent Servers / Switch Other Servers)
         if (element && element.contextValue === 'group') {
             const items: ServerTreeItem[] = [];
 
-            for (const url of recentServers) {
+            const uniqueRecent = Array.from(new Set(recentServers));
+            for (const url of uniqueRecent) {
                 // 如果是已连接状态，并且这个 URL 就是当前连接的 URL，则跳过（因为已经在 Root 显示了）
                 // 或者是未连接状态下，Root 已经显示了 savedUrl，也跳过
                 if (this.serverUrl && url === this.serverUrl) continue;
@@ -86,16 +87,16 @@ export class ServerProvider implements vscode.TreeDataProvider<ServerTreeItem> {
                 ));
             }
 
-            // 添加 "新建连接" 按钮
+            // 连接新服务器入口（放在最后）
             items.push(new ServerTreeItem(
-                '连接新服务器...',
+                '连接新的服务器...',
                 vscode.TreeItemCollapsibleState.None,
                 'addServer',
                 '',
                 {
                     command: 'jupyterhub.connectServer',
                     title: '新建连接',
-                    arguments: ['__new__'] // 特殊标记，强制输入
+                    arguments: ['__new__']
                 }
             ));
 
@@ -170,6 +171,7 @@ export class ServerProvider implements vscode.TreeDataProvider<ServerTreeItem> {
                 '已连接'
             ));
 
+            // 2. 用户信息（第二行显示）
             if (this.userInfo) {
                 items.push(new ServerTreeItem(
                     this.userInfo.name,
@@ -179,7 +181,7 @@ export class ServerProvider implements vscode.TreeDataProvider<ServerTreeItem> {
                 ));
             }
 
-            // 2. 切换其他服务器
+            // 3. 切换其他服务器（可展开：历史记录 + 连接新的服务器）
             items.push(new ServerTreeItem(
                 '切换其他服务器',
                 vscode.TreeItemCollapsibleState.Collapsed,

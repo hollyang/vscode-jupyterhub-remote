@@ -4,7 +4,7 @@
     "description": "连接远程 JupyterHub 服务，提供文件浏览、终端和内核管理功能",
     "publisher": "smile-chen95",
     "icon": "resources/jupyter-logo.png",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "license": "Apache-2.0",
     "homepage": "https://github.com/smile-chen95/vscode-jupyterhub-remote#readme",
     "bugs": {
@@ -36,6 +36,9 @@
         "onCommand:jupyterhub.renameItem",
         "onCommand:jupyterhub.downloadFile",
         "onCommand:jupyterhub.uploadFile",
+        "onCommand:jupyterhub.copyItem",
+        "onCommand:jupyterhub.cutItem",
+        "onCommand:jupyterhub.pasteItem",
         "onCommand:jupyterhub.openFile",
         "onCommand:jupyterhub.openTerminal",
         "onCommand:jupyterhub.showKernels",
@@ -106,6 +109,24 @@
                 "title": "上传文件",
                 "category": "JupyterHub",
                 "icon": "$(cloud-upload)"
+            },
+            {
+                "command": "jupyterhub.copyItem",
+                "title": "复制",
+                "category": "JupyterHub",
+                "icon": "$(copy)"
+            },
+            {
+                "command": "jupyterhub.cutItem",
+                "title": "剪切",
+                "category": "JupyterHub",
+                "icon": "$(scissors)"
+            },
+            {
+                "command": "jupyterhub.pasteItem",
+                "title": "粘贴",
+                "category": "JupyterHub",
+                "icon": "$(paste)"
             },
             {
                 "command": "jupyterhub.openFile",
@@ -208,6 +229,11 @@
                     "group": "navigation"
                 },
                 {
+                    "command": "jupyterhub.pasteItem",
+                    "when": "view == jupyterhubFiles && jupyterhub.clipboard.hasItem",
+                    "group": "navigation"
+                },
+                {
                     "command": "jupyterhub.openTerminal",
                     "when": "view == jupyterhubFiles",
                     "group": "navigation"
@@ -262,6 +288,18 @@
                 {
                     "command": "jupyterhub.renameItem",
                     "when": "view == jupyterhubFiles"
+                },
+                {
+                    "command": "jupyterhub.copyItem",
+                    "when": "view == jupyterhubFiles && (viewItem == file || viewItem == directory || viewItem == notebook)"
+                },
+                {
+                    "command": "jupyterhub.cutItem",
+                    "when": "view == jupyterhubFiles && (viewItem == file || viewItem == directory || viewItem == notebook)"
+                },
+                {
+                    "command": "jupyterhub.pasteItem",
+                    "when": "view == jupyterhubFiles && jupyterhub.clipboard.hasItem && (viewItem == file || viewItem == directory || viewItem == notebook)"
                 },
                 {
                     "command": "jupyterhub.deleteItem",
