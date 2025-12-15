@@ -36,6 +36,7 @@ let kernelProvider: KernelProvider;
 let serverProvider: ServerProvider;
 let fileSystemProvider: JupyterHubFileSystemProvider;
 let kernelControllerManager: KernelControllerManager;
+let fileTreeView: vscode.TreeView<any> | null = null;
 
 // Managers
 let secretStorageManager: SecretStorageManager;
@@ -47,64 +48,100 @@ const terminalMap = new Map<string, vscode.Terminal>();
 // 临时文件管理
 const tempFilesMap = new Map<string, { remotePath: string, localPath: string }>();
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(`${label}超时（${Math.round(timeoutMs / 1000)}s）`));
+        }, timeoutMs);
+
+        promise.then(
+            (value) => {
+                clearTimeout(timer);
+                resolve(value);
+            },
+            (error) => {
+                clearTimeout(timer);
+                reject(error);
+            }
+        );
+    });
+}
+
 /**
  * 插件激活
  */
 export function activate(context: vscode.ExtensionContext) {
     Logger.log('JupyterHub Remote 插件已激活');
 
-    // 初始化 Secret Storage
-    secretStorageManager = new SecretStorageManager(context.secrets);
+    try {
+        // 初始化 Secret Storage
+        secretStorageManager = new SecretStorageManager(context.secrets);
 
-    // 初始化 Metrics Manager
-    metricsManager = new MetricsManager();
+        // 初始化 Metrics Manager
+        metricsManager = new MetricsManager();
 
-    // 初始化视图提供者
-    fileTreeProvider = new FileTreeProvider();
-    kernelProvider = new KernelProvider();
-    serverProvider = new ServerProvider();
-    fileSystemProvider = new JupyterHubFileSystemProvider(null as any);
-    kernelControllerManager = new KernelControllerManager();
+        // 初始化视图提供者
+        fileTreeProvider = new FileTreeProvider();
+        kernelProvider = new KernelProvider();
+        serverProvider = new ServerProvider();
+        fileSystemProvider = new JupyterHubFileSystemProvider(null as any);
+        kernelControllerManager = new KernelControllerManager();
+        fileTreeProvider.setExtensionUri(context.extensionUri);
 
-    // 注册视图
-    context.subscriptions.push(
-        vscode.window.registerTreeDataProvider('jupyterhubFiles', fileTreeProvider)
-    );
-    context.subscriptions.push(
-        vscode.window.registerTreeDataProvider('jupyterhubKernels', kernelProvider)
-    );
-    context.subscriptions.push(
-        vscode.window.registerTreeDataProvider('jupyterhubServers', serverProvider)
-    );
+        // 初始化剪贴板上下文
+        vscode.commands.executeCommand('setContext', 'jupyterhub.clipboard.hasItem', false);
+        vscode.commands.executeCommand('setContext', 'jupyterhub.clipboard.action', '');
 
-    // 注册文件系统提供者
-    context.subscriptions.push(
-        vscode.workspace.registerFileSystemProvider('jupyterhub', fileSystemProvider, {
-            isCaseSensitive: true
-        })
-    );
+        // 先注册命令，避免后续初始化失败导致 command not found
+        registerCommands(context);
 
-    // 注册 Metrics Manager
-    context.subscriptions.push(metricsManager);
-
-    // 监听文件保存事件
-    vscode.workspace.onDidSaveTextDocument(handleFileSave);
-
-    // 监听终端关闭事件
-    vscode.window.onDidCloseTerminal((term) => {
-        for (const [name, storedTerm] of terminalMap.entries()) {
-            if (storedTerm === term) {
-                terminalMap.delete(name);
-                break;
-            }
+        // 注册视图
+        try {
+            fileTreeView = vscode.window.createTreeView('jupyterhubFiles', {
+                treeDataProvider: fileTreeProvider,
+                dragAndDropController: fileTreeProvider.getDragAndDropController()
+            });
+            context.subscriptions.push(fileTreeView);
+        } catch (error: any) {
+            Logger.error('[Activate] createTreeView(jupyterhubFiles) failed:', error?.message ?? error);
         }
-    });
 
-    // 注册命令
-    registerCommands(context);
+        context.subscriptions.push(
+            vscode.window.registerTreeDataProvider('jupyterhubKernels', kernelProvider)
+        );
+        context.subscriptions.push(
+            vscode.window.registerTreeDataProvider('jupyterhubServers', serverProvider)
+        );
 
-    // 尝试自动连接（如果有保存的配置）
-    tryAutoConnect();
+        // 注册文件系统提供者
+        context.subscriptions.push(
+            vscode.workspace.registerFileSystemProvider('jupyterhub', fileSystemProvider, {
+                isCaseSensitive: true
+            })
+        );
+
+        // 注册 Metrics Manager
+        context.subscriptions.push(metricsManager);
+
+        // 监听文件保存事件
+        context.subscriptions.push(vscode.workspace.onDidSaveTextDocument(handleFileSave));
+
+        // 监听终端关闭事件
+        context.subscriptions.push(vscode.window.onDidCloseTerminal((term) => {
+            for (const [name, storedTerm] of terminalMap.entries()) {
+                if (storedTerm === term) {
+                    terminalMap.delete(name);
+                    break;
+                }
+            }
+        }));
+
+        // 尝试自动连接（如果有保存的配置）
+        tryAutoConnect();
+    } catch (error: any) {
+        Logger.error('[Activate] failed:', error?.message ?? error);
+        vscode.window.showErrorMessage(`JupyterHub Remote 激活失败: ${error?.message ?? String(error)}`);
+    }
 }
 
 /**
@@ -156,6 +193,32 @@ function registerCommands(context: vscode.ExtensionContext) {
     );
     context.subscriptions.push(
         vscode.commands.registerCommand('jupyterhub.uploadFile', (item) => fileTreeProvider.uploadFile(item))
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('jupyterhub.copyItem', (item) => {
+            const target = item ?? fileTreeView?.selection?.[0];
+            if (!target) {
+                vscode.window.showWarningMessage('请先在文件树中选择要复制的文件或目录');
+                return;
+            }
+            return fileTreeProvider.copyItem(target);
+        })
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('jupyterhub.cutItem', (item) => {
+            const target = item ?? fileTreeView?.selection?.[0];
+            if (!target) {
+                vscode.window.showWarningMessage('请先在文件树中选择要剪切的文件或目录');
+                return;
+            }
+            return fileTreeProvider.cutItem(target);
+        })
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('jupyterhub.pasteItem', (item) => {
+            const target = item ?? fileTreeView?.selection?.[0];
+            return fileTreeProvider.pasteItem(target);
+        })
     );
     context.subscriptions.push(
         vscode.commands.registerCommand('jupyterhub.openFile', openFile)
@@ -324,13 +387,20 @@ async function connectServer(arg?: any) {
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: `正在连接到 ${url}...`,
-            cancellable: false
-        }, async (progress) => {
+            cancellable: true
+        }, async (progress, progressToken) => {
+            let cancelled = false;
+            progressToken.onCancellationRequested(() => {
+                cancelled = true;
+            });
             let retryWithNewToken = false;
 
             do {
                 try {
                     retryWithNewToken = false; // 重置标志
+                    if (cancelled) {
+                        throw new Error('用户取消连接');
+                    }
 
                     // 创建 Hub API 客户端
                     hubApi = new JupyterHubApi({
@@ -343,13 +413,16 @@ async function connectServer(arg?: any) {
                     progress.report({ increment: 20, message: '验证身份...' });
 
                     // 关键点：这里进行第一次请求，如果 Token 错误会抛出异常
-                    const user = await hubApi.getCurrentUser();
+                    const user = await withTimeout(hubApi.getCurrentUser(), 30000, '验证身份');
                     currentUser = user.name;
+                    if (cancelled) {
+                        throw new Error('用户取消连接');
+                    }
 
                     // 确保服务器已启动
                     progress.report({ increment: 10, message: '检查服务器状态...' });
                     // 目前所有环境都使用默认 server（REST: /hub/api/users/{user}/server）
-                    const status = await hubApi.getServerStatus(currentUser, '');
+                    const status = await withTimeout(hubApi.getServerStatus(currentUser, ''), 30000, '检查服务器状态');
 
                     if (!status?.ready) {
                         if (!ConfigManager.getAutoStartServer()) {
@@ -383,13 +456,13 @@ async function connectServer(arg?: any) {
                         }
 
                         progress.report({ increment: 5, message: '启动服务器...' });
-                        await hubApi.startServer(currentUser, '', userOptions);
+                        await withTimeout(hubApi.startServer(currentUser, '', userOptions), 30000, '启动服务器');
 
                         // 使用 progress 事件流更新启动进度
-                        await hubApi.waitForServerWithProgress(currentUser, '', (p, msg) => {
+                        await withTimeout(hubApi.waitForServerWithProgress(currentUser, '', (p, msg) => {
                             const text = msg ? `服务器启动中 ${p}% - ${msg}` : `服务器启动中 ${p}%`;
                             progress.report({ message: text });
-                        });
+                        }), 330000, '等待服务器就绪');
                     }
 
                     // 如果成功，继续后续流程...
