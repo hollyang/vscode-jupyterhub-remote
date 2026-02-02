@@ -118,3 +118,13 @@ npm run lint
 ## License
 
 Apache-2.0
+
+---
+
+## Custom Modifications (by hollyang)
+
+本版本包含以下自定义改进：
+
+1.  **修复 Kernel 运行路径问题**: 解决了通过插件打开 Notebook 时，`pwd` 默认在用户根目录的问题。现在 Kernel 会自动切换到当前 Notebook 所在的远程目录。
+2.  **增强终端功能**: 在远程文件浏览器中右键打开终端时，会自动定位到当前选中的目录（CWD）。
+3.  **版本标识**: 更新了版本号后缀及作者信息，以便区分官方版本。

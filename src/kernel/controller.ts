@@ -40,10 +40,20 @@ export class RemoteKernelController {
         let session = this.executions.get(_notebook.uri.toString());
         if (!session) {
             try {
+                // Determine the current working directory for the kernel
+                let cwd: string | undefined;
+                if (_notebook.uri.scheme === 'jupyterhub') {
+                    // Extract directory from the path (e.g., /folder/notebook.ipynb -> /folder)
+                    const pathParts = _notebook.uri.path.split('/');
+                    pathParts.pop(); // Remove filename
+                    // Join back and remove leading slash if present (Jupyter expects relative path)
+                    cwd = pathParts.join('/').replace(/^\//, '');
+                }
+
                 // 启动一个新的 Kernel (不创建 Jupyter Session，只是 Kernel)
                 // 或者我们可以创建 Jupyter Session 来更好地管理
                 // 这里简单起见，直接启动 Kernel
-                const kernel = await this.kernelsApi.startKernel(this.kernelSpec.name);
+                const kernel = await this.kernelsApi.startKernel(this.kernelSpec.name, cwd);
 
                 // 构造 WebSocket URL (确保处理 https -> wss)
                 const baseUrl = this.serverUrl.replace(/^http/, 'ws');

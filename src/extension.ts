@@ -880,7 +880,19 @@ async function openTerminal(item?: any) {
         if (item && item.contextValue === 'terminal') {
             terminalName = item.data.name;
         } else {
-            const terminal = await terminalsApi.createTerminal();
+            let cwd: string | undefined;
+            // 如果是从文件树触发，尝试获取当前路径作为 cwd
+            if (item && item.model && typeof item.model.path === 'string') {
+                if (item.model.type === 'directory') {
+                    cwd = item.model.path;
+                } else {
+                    // 如果是文件，取其父目录
+                    cwd = path.posix.dirname(item.model.path);
+                    if (cwd === '.') cwd = ''; // path.dirname('file') returns '.'
+                }
+            }
+
+            const terminal = await terminalsApi.createTerminal(cwd);
             terminalName = terminal.name;
         }
 

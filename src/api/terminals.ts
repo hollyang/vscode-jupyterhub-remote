@@ -36,9 +36,10 @@ export class TerminalsApi {
     /**
      * 创建新终端
      */
-    async createTerminal(): Promise<TerminalInfo> {
+    async createTerminal(cwd?: string): Promise<TerminalInfo> {
         const url = `/api/terminals`;
-        const response = await this.client.post<TerminalInfo>(url);
+        const data = cwd ? { cwd } : {};
+        const response = await this.client.post<TerminalInfo>(url, data);
         return response.data;
     }
 
