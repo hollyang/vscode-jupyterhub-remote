@@ -40,20 +40,16 @@ export class RemoteKernelController {
         let session = this.executions.get(_notebook.uri.toString());
         if (!session) {
             try {
-                // Determine the current working directory for the kernel
-                let cwd: string | undefined;
+                // Determine the notebook path for the kernel context
+                let notebookPath: string | undefined;
                 if (_notebook.uri.scheme === 'jupyterhub') {
-                    // Extract directory from the path (e.g., /folder/notebook.ipynb -> /folder)
-                    const pathParts = _notebook.uri.path.split('/');
-                    pathParts.pop(); // Remove filename
-                    // Join back and remove leading slash if present (Jupyter expects relative path)
-                    cwd = pathParts.join('/').replace(/^\//, '');
+                    // Jupyter expects relative path to the notebook file (e.g. folder/notebook.ipynb)
+                    notebookPath = _notebook.uri.path.replace(/^\//, '');
                 }
 
-                // 启动一个新的 Kernel (不创建 Jupyter Session，只是 Kernel)
-                // 或者我们可以创建 Jupyter Session 来更好地管理
-                // 这里简单起见，直接启动 Kernel
-                const kernel = await this.kernelsApi.startKernel(this.kernelSpec.name, cwd);
+                // 启动一个新的 Kernel
+                // Pass the full notebook path so Jupyter knows the context
+                const kernel = await this.kernelsApi.startKernel(this.kernelSpec.name, notebookPath);
 
                 // 构造 WebSocket URL (确保处理 https -> wss)
                 const baseUrl = this.serverUrl.replace(/^http/, 'ws');
@@ -61,6 +57,44 @@ export class RemoteKernelController {
 
                 session = new RemoteKernelSession(wsUrl, this.token);
                 await session.connect();
+
+                // 强制修正 Python 环境的路径 (Double Check)
+                // 即使 Server 没正确处理 path 参数，这段代码也能保证 import 正常
+                if (notebookPath && this.kernelSpec.spec.language.toLowerCase() === 'python') {
+                    const lastSlash = notebookPath.lastIndexOf('/');
+                    if (lastSlash !== -1) {
+                        const cwd = notebookPath.substring(0, lastSlash);
+                        // 1. 切换工作目录
+                        // 2. 将当前目录加入 sys.path 首位，确保能 import 同级文件
+                        const code = `import os; import sys; os.chdir('/home/${this.token}/${cwd}' if os.path.exists('/home/${this.token}/${cwd}') else '${cwd}'); sys.path.insert(0, os.getcwd())`;
+                        // 注意：上面路径拼接逻辑可能不仅适用，最通用是直接用相对路径或让 os.chdir 尝试
+                        // 更安全的做法：只传递相对路径，Jupyter 会相对于 Server Root 处理
+                        const safeCode = `
+import os
+import sys
+try:
+    # 尝试切换到笔记本所在目录
+    if '${cwd}' != '':
+        if os.path.exists('${cwd}'):
+            os.chdir('${cwd}')
+        else:
+            # 可能是相对于 home 的路径
+            home_rel = os.path.expanduser('~/${cwd}')
+            if os.path.exists(home_rel):
+                os.chdir(home_rel)
+    
+    # 确保当前目录在 path 中
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+except Exception:
+    pass
+`;
+                        // 静默执行初始化代码
+                        await session.executeCode(safeCode, () => {});
+                    }
+                }
+
                 this.executions.set(_notebook.uri.toString(), session);
 
                 // 监听 Notebook 关闭以清理
