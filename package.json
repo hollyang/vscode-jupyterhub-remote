@@ -5,7 +5,7 @@
     "publisher": "smile-chen95",
     "author": "hollyang",
     "icon": "resources/jupyter-logo.png",
-    "version": "0.2.7-hollyang",
+    "version": "0.2.8-hollyang",
     "license": "Apache-2.0",
     "homepage": "https://github.com/smile-chen95/vscode-jupyterhub-remote#readme",
     "bugs": {

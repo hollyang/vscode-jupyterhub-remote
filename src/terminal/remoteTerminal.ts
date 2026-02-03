@@ -96,8 +96,14 @@ export class RemoteTerminal implements vscode.Pseudoterminal {
                 this.writeEmitter.fire(`\r\n*** 终端错误: ${error.message} ***\r\n`);
             });
 
-            this.ws.on('close', () => {
-                this.writeEmitter.fire('\r\n*** 终端连接已关闭 ***\r\n');
+            this.ws.on('close', (code: number, reason: Buffer) => {
+                const reasonStr = reason.toString() ? `: ${reason.toString()}` : '';
+                this.writeEmitter.fire(`\r\n*** 终端连接已关闭 (状态码: ${code}${reasonStr}) ***\r\n`);
+                
+                // 常见的非正常关闭（1000 为正常，1005 为无状态码）
+                if (code !== 1000 && code !== 1005) {
+                    this.writeEmitter.fire('提示：终端启动失败可能由于远程目录 (CWD) 不存在、权限不足或服务器环境配置问题导致。\r\n');
+                }
                 this.closeEmitter.fire(0);
             });
 

@@ -64,22 +64,23 @@ export class RemoteKernelController {
                     const lastSlash = notebookPath.lastIndexOf('/');
                     if (lastSlash !== -1) {
                         const cwd = notebookPath.substring(0, lastSlash);
+                        // Escape single quotes for safe injection into Python string
+                        const escapedCwd = cwd.replace(/'/g, "\\'");
+                        
                         // 1. 切换工作目录
                         // 2. 将当前目录加入 sys.path 首位，确保能 import 同级文件
-                        const code = `import os; import sys; os.chdir('/home/${this.token}/${cwd}' if os.path.exists('/home/${this.token}/${cwd}') else '${cwd}'); sys.path.insert(0, os.getcwd())`;
-                        // 注意：上面路径拼接逻辑可能不仅适用，最通用是直接用相对路径或让 os.chdir 尝试
-                        // 更安全的做法：只传递相对路径，Jupyter 会相对于 Server Root 处理
                         const safeCode = `
 import os
 import sys
 try:
     # 尝试切换到笔记本所在目录
-    if '${cwd}' != '':
-        if os.path.exists('${cwd}'):
-            os.chdir('${cwd}')
+    target_cwd = '${escapedCwd}'
+    if target_cwd != '':
+        if os.path.exists(target_cwd):
+            os.chdir(target_cwd)
         else:
             # 可能是相对于 home 的路径
-            home_rel = os.path.expanduser('~/${cwd}')
+            home_rel = os.path.expanduser('~/' + target_cwd)
             if os.path.exists(home_rel):
                 os.chdir(home_rel)
     
@@ -118,6 +119,9 @@ except Exception:
         execution.start(Date.now()); // Set start time
 
         try {
+            // Clear previous outputs to match JupyterWeb behavior
+            execution.clearOutput();
+
             await session.executeCode(cell.document.getText(), (msg) => {
                 this.handleIOPubMessage(execution, msg);
             });
@@ -138,7 +142,9 @@ except Exception:
         const msgType = msg.header.msg_type;
         const content = msg.content;
 
-        if (msgType === 'stream') {
+        if (msgType === 'clear_output') {
+            execution.clearOutput();
+        } else if (msgType === 'stream') {
             const text = content.text;
             if (content.name === 'stdout') {
                 execution.appendOutput(new vscode.NotebookCellOutput([
